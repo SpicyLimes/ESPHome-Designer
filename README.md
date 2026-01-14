@@ -2,6 +2,13 @@
 
 **A visual drag-and-drop editor for ESPHome displays (E-Ink, OLED, LCD, Touch), running as a Home Assistant integration or a standalone web app.**
 
+### Important Note:
+* This Repo was downloaded from the original author of the *ESPHome Designer App*.
+* I take **NO** credit for the design, nor do I provide any support for it.
+* Please visit the original author's GitHub for the most recent versions, and for dedicated support: [koosoli - ESPHomeDesigner](https://github.com/koosoli/ESPHomeDesigner)
+
+<br>
+
 <div align="center">
   <a href="https://github.com/sponsors/koosoli">
     <img src="https://img.shields.io/badge/Sponsor-❤️-ff69b4?style=for-the-badge&logo=github-sponsors" alt="Sponsor Project">
