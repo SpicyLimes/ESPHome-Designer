@@ -1,5 +1,8 @@
 FROM nginx:alpine
 
+# Install curl for healthcheck
+RUN apk add --no-cache curl
+
 # Copy frontend files to nginx html directory
 COPY custom_components/reterminal_dashboard/frontend/ /usr/share/nginx/html/
 
@@ -16,7 +19,7 @@ RUN chmod +x /docker-entrypoint.sh
 EXPOSE 80
 
 HEALTHCHECK --interval=30s --timeout=3s \
-  CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+  CMD curl -f http://localhost/ || exit 1
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]
