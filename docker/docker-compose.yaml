@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  esphome-designer:
+    image: ghcr.io/spicylimes/esphome-designer:latest
+    container_name: esphome-designer
+    restart: unless-stopped
+    ports:
+      - "6054:80"
+    environment:
+      # Set these in Portainer's environment variables for security
+      - HA_URL=${HA_URL:-}
+      - HA_TOKEN=${HA_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

@@ -1,4 +1,16 @@
 /**
+ * Gets the container-injected environment configuration.
+ * This is set by docker-entrypoint.sh when running in Docker.
+ * @returns {Object|null} The config object or null if not running in Docker.
+ */
+function getEnvConfig() {
+    if (window.ESPHOME_DESIGNER_CONFIG) {
+        return window.ESPHOME_DESIGNER_CONFIG;
+    }
+    return null;
+}
+
+/**
  * Detects the Home Assistant backend URL.
  * @returns {string|null} The API base URL or null.
  */
@@ -39,11 +51,17 @@ function detectHaBackendBaseUrl() {
 }
 
 /**
- * Gets the manual HA URL from localStorage.
+ * Gets the manual HA URL from localStorage or environment config.
+ * Environment config (from Docker) takes precedence over localStorage.
  * @returns {string|null}
  */
 function getHaManualUrl() {
     try {
+        // Check for container-injected config first (Docker deployment)
+        const envConfig = getEnvConfig();
+        if (envConfig && envConfig.HA_URL) {
+            return envConfig.HA_URL;
+        }
         return localStorage.getItem('ha_manual_url');
     } catch (e) {
         return null;
@@ -79,11 +97,17 @@ function setHaManualUrl(url) {
 }
 
 /**
- * Gets the HA Long-Lived Access Token from localStorage.
+ * Gets the HA Long-Lived Access Token from localStorage or environment config.
+ * Environment config (from Docker) takes precedence over localStorage.
  * @returns {string|null}
  */
 function getHaToken() {
     try {
+        // Check for container-injected config first (Docker deployment)
+        const envConfig = getEnvConfig();
+        if (envConfig && envConfig.HA_TOKEN) {
+            return envConfig.HA_TOKEN;
+        }
         return localStorage.getItem('ha_llat_token');
     } catch (e) {
         return null;
