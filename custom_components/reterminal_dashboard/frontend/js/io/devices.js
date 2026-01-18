@@ -208,6 +208,17 @@ window.DEVICE_PROFILES = {
   },
 
   // ========================================================================
+  // SUNTON / CYD DEVICES
+  // ========================================================================
+  esp32_2432s028r_cyd: {
+    name: "ESP32-2432S028R CYD 2.8\" 320x240",
+    isPackageBased: true,
+    hardwarePackage: "hardware/esp32-2432s028r-cyd.yaml",
+    resolution: { width: 320, height: 240 },
+    features: { psram: false, buzzer: false, buttons: false, lcd: true, rgb_led: true, light_sensor: true }
+  },
+
+  // ========================================================================
   // OTHER DEVICES
   // ========================================================================
   m5stack_coreink: {
