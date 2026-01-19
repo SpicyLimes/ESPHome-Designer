@@ -56,6 +56,8 @@ window.ensureEntityDatalist = ensureEntityDatalist;
 
 /**
  * Fetches entity states from Home Assistant.
+ * In embedded mode: Uses custom component API (/api/reterminal_dashboard/entities)
+ * In standalone mode: Uses native HA API (/api/states)
  * Emits EVENTS.ENTITIES_LOADED on success.
  * @returns {Promise<Array>} The list of entities or empty array.
  */
@@ -68,23 +70,76 @@ async function fetchEntityStates() {
 
     entityStatesFetchInProgress = true;
     try {
-        console.log("[EntityStates] Fetching from:", `${HA_API_BASE}/entities`);
-        const resp = await fetch(`${HA_API_BASE}/entities?domains=sensor,binary_sensor,weather,light,switch,fan,cover,climate,media_player,input_number,number,input_boolean,input_text,input_select,button,input_button,scene,script`, {
-            headers: getHaHeaders()
-        });
-        if (!resp.ok) {
-            console.warn("[EntityStates] Failed to fetch:", resp.status);
-            haEntitiesLoadError = true;
-            return [];
-        }
-        const entities = await resp.json();
-        if (!Array.isArray(entities)) {
-            console.warn("[EntityStates] Invalid response format");
-            haEntitiesLoadError = true;
-            return [];
-        }
+        let entities = [];
+        const standalone = isStandaloneMode();
 
-        console.log(`[EntityStates] Received ${entities.length} entities`);
+        if (standalone) {
+            // Standalone mode: Use native HA API /api/states
+            const apiUrl = `${HA_API_BASE}/api/states`;
+            console.log("[EntityStates] Standalone mode - Fetching from native HA API:", apiUrl);
+
+            const resp = await fetch(apiUrl, {
+                headers: getHaHeaders(),
+                // Add timeout for better error handling
+                signal: AbortSignal.timeout(10000)
+            });
+
+            if (!resp.ok) {
+                const errorText = await resp.text().catch(() => '');
+                console.warn("[EntityStates] Failed to fetch from HA:", resp.status, errorText);
+                if (resp.status === 401) {
+                    console.error("[EntityStates] Authentication failed - check your Long-Lived Access Token");
+                } else if (resp.status === 0 || errorText.includes('CORS')) {
+                    console.error("[EntityStates] CORS error - add your Docker URL to HA's http.cors_allowed_origins");
+                }
+                haEntitiesLoadError = true;
+                return [];
+            }
+
+            const rawStates = await resp.json();
+            if (!Array.isArray(rawStates)) {
+                console.warn("[EntityStates] Invalid response format from /api/states");
+                haEntitiesLoadError = true;
+                return [];
+            }
+
+            // Filter to useful domains
+            const allowedDomains = ['sensor', 'binary_sensor', 'weather', 'light', 'switch', 'fan', 'cover', 'climate', 'media_player', 'input_number', 'number', 'input_boolean', 'input_text', 'input_select', 'button', 'input_button', 'scene', 'script', 'person', 'device_tracker', 'sun', 'zone'];
+
+            entities = rawStates
+                .filter(e => {
+                    const domain = e.entity_id.split('.')[0];
+                    return allowedDomains.includes(domain);
+                })
+                .map(e => ({
+                    entity_id: e.entity_id,
+                    state: e.state,
+                    name: e.attributes?.friendly_name || e.entity_id,
+                    unit: e.attributes?.unit_of_measurement || '',
+                    attributes: e.attributes || {}
+                }));
+
+            console.log(`[EntityStates] Standalone mode - Received ${rawStates.length} total, filtered to ${entities.length} entities`);
+
+        } else {
+            // Embedded mode: Use custom component API
+            console.log("[EntityStates] Embedded mode - Fetching from:", `${HA_API_BASE}/entities`);
+            const resp = await fetch(`${HA_API_BASE}/entities?domains=sensor,binary_sensor,weather,light,switch,fan,cover,climate,media_player,input_number,number,input_boolean,input_text,input_select,button,input_button,scene,script`, {
+                headers: getHaHeaders()
+            });
+            if (!resp.ok) {
+                console.warn("[EntityStates] Failed to fetch:", resp.status);
+                haEntitiesLoadError = true;
+                return [];
+            }
+            entities = await resp.json();
+            if (!Array.isArray(entities)) {
+                console.warn("[EntityStates] Invalid response format");
+                haEntitiesLoadError = true;
+                return [];
+            }
+            console.log(`[EntityStates] Embedded mode - Received ${entities.length} entities`);
+        }
 
         // Cache as array of objects for easier searching/filtering
         entityStatesCache = entities.map(entity => {
@@ -120,6 +175,11 @@ async function fetchEntityStates() {
         return entityStatesCache;
     } catch (err) {
         console.warn("[EntityStates] Error fetching:", err);
+        if (err.name === 'TimeoutError') {
+            console.error("[EntityStates] Request timed out - check if HA is reachable");
+        } else if (err.message?.includes('Failed to fetch')) {
+            console.error("[EntityStates] Network error - check CORS configuration in HA");
+        }
         haEntitiesLoadError = true;
         return [];
     } finally {
@@ -163,7 +223,8 @@ async function loadHaEntitiesIfNeeded() {
 
 /**
  * Loads the layout from the Home Assistant backend.
- * Will load the last saved/active layout if available.
+ * In standalone mode: Loads from localStorage.
+ * In embedded mode: Loads from custom component API.
  */
 async function loadLayoutFromBackend() {
     if (!hasHaBackend()) {
@@ -171,6 +232,25 @@ async function loadLayoutFromBackend() {
         return;
     }
 
+    // Standalone mode: Load from localStorage
+    if (isStandaloneMode()) {
+        console.log("[loadLayoutFromBackend] Standalone mode - Loading from localStorage");
+        const savedLayout = window.AppState?.loadFromLocalStorage();
+        if (savedLayout) {
+            console.log(`[loadLayoutFromBackend] Loaded layout from localStorage:`, {
+                name: savedLayout.name || savedLayout.deviceName,
+                device_model: savedLayout.device_model,
+                pages: savedLayout.pages?.length
+            });
+            loadLayoutIntoState(savedLayout);
+            emit(EVENTS.LAYOUT_IMPORTED, savedLayout);
+        } else {
+            console.log("[loadLayoutFromBackend] No saved layout in localStorage, using defaults");
+        }
+        return;
+    }
+
+    // Embedded mode: Use custom component API
     try {
         // First, check if there's a last active layout to load
         let layoutId = null;
@@ -249,7 +329,8 @@ async function loadLayoutFromBackend() {
 
 /**
  * Saves the current layout to the Home Assistant backend.
- * Sends the AppState layout data (pages, settings) to the current layout.
+ * In standalone mode: Saves to localStorage.
+ * In embedded mode: Saves to custom component API.
  * @returns {Promise<boolean>} True if successful, false otherwise.
  */
 async function saveLayoutToBackend() {
@@ -276,6 +357,20 @@ async function saveLayoutToBackend() {
         deviceName: window.AppState.deviceName || "Layout 1"
     };
 
+    // Standalone mode: Save to localStorage
+    if (isStandaloneMode()) {
+        console.log(`[saveLayoutToBackend] Standalone mode - Saving to localStorage`);
+        try {
+            window.AppState.saveToLocalStorage();
+            console.log(`[saveLayoutToBackend] Layout saved to localStorage successfully`);
+            return true;
+        } catch (err) {
+            console.error("Failed to save layout to localStorage:", err);
+            throw err;
+        }
+    }
+
+    // Embedded mode: Use custom component API
     try {
         console.log(`[saveLayoutToBackend] Saving to layout '${layoutId}':`, {
             device_model: deviceModel,
